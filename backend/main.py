@@ -46,8 +46,6 @@ MODELS = {
     "qwen-2.5-coder-32b":"qwen-2.5-coder-32b"
 }
 
-
-
 # Define request/response models
 class Message(BaseModel):
     role: str

@@ -18,7 +18,7 @@ export function ChatHeader() {
 
   return (
     <div className="bg-gradient-to-r from-blue-500 to-indigo-600 dark:from-gray-900 dark:to-gray-800 text-white p-4 flex justify-between items-center sticky top-0 z-10 shadow-md">
-      <h1 className="text-xl font-bold">Groq Chatbot</h1>
+      <h1 className="text-xl font-bold">Tutor virtual</h1>
       
       <div className="flex items-center gap-3">
         <button
