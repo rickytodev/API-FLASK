@@ -12,8 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from utils import clean_response
 
-from flask_cors import CORS
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -22,9 +20,6 @@ load_dotenv()
 
 # Initialize FastAPI app
 app = FastAPI(title="Groq Chatbot API")
-
-# Configuración básica: Permitir todas las solicitudes desde cualquier origen
-CORS(app)
 
 # Add CORS middleware
 app.add_middleware(
