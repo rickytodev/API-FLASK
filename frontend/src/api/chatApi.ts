@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Message, ChatSettings } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://api-flask-wcad.onrender.com';
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://api-flask-wcad.onrender.com/';
 
 export const fetchModels = async (): Promise<string[]> => {
   const response = await axios.get(`${API_BASE_URL}/models`);
