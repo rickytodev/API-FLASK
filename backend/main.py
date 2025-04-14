@@ -1,13 +1,12 @@
 import os
-import httpx
-import asyncio
 import logging
+import asyncio
 from typing import List, Dict
 from dotenv import load_dotenv
-
-from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from pydantic import BaseModel, ValidationError
+import httpx
 
 from utils import clean_response
 
@@ -16,31 +15,21 @@ load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("groq-api")
+logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
-app = FastAPI(title="Groq Chatbot API")
+# Flask app setup
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-# Get environment variables
-GROQ_API_KEY = "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"
-GROQ_ORG = "org_01jqcz3ymzf9qv6m0cf2fbga88"
+# Environment vars
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_ORG = os.getenv("GROQ_ORG")
 
 if not GROQ_API_KEY or not GROQ_ORG:
-    raise ValueError("GROQ_API_KEY or GROQ_ORG is not set in the environment")
+    raise ValueError("GROQ_API_KEY or GROQ_ORG is not set")
 
-# Groq API endpoint
+# Groq API
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-
-# CORS Configuration
-origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")  # Ej: http://localhost:3000,https://mydomain.com
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins if origins != ["*"] else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Available models
 MODELS = {
@@ -50,7 +39,7 @@ MODELS = {
     "qwen-2.5-coder-32b": "qwen-2.5-coder-32b"
 }
 
-# Pydantic models
+# Pydantic Models
 class Message(BaseModel):
     role: str
     content: str
@@ -66,7 +55,7 @@ class ChatResponse(BaseModel):
     response: str
     model: str
 
-# Groq API Call
+# Async Groq call
 async def call_groq_api(payload: Dict) -> Dict:
     async with httpx.AsyncClient() as client:
         headers = {
@@ -74,7 +63,6 @@ async def call_groq_api(payload: Dict) -> Dict:
             "Content-Type": "application/json",
             "Groq-Organization": GROQ_ORG
         }
-
         try:
             response = await client.post(
                 GROQ_API_URL,
@@ -82,62 +70,66 @@ async def call_groq_api(payload: Dict) -> Dict:
                 json=payload,
                 timeout=30.0
             )
-
-            logger.info(f"Groq API responded with: {response.status_code}")
+            logger.info(f"Groq API responded: {response.status_code}")
             if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Groq API Error: {response.text}"
-                )
-
+                raise Exception(f"Groq Error {response.status_code}: {response.text}")
             return response.json()
         except httpx.RequestError as e:
-            raise HTTPException(status_code=500, detail=f"Groq API connection error: {str(e)}")
+            raise Exception(f"Groq API connection error: {str(e)}")
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    logger.info(f"Model requested: {request.model}")
+@app.route("/")
+def health_check():
+    return jsonify({"status": "ok"})
 
-    if request.model not in MODELS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid model. Available models: {', '.join(MODELS.keys())}"
-        )
+@app.route("/models")
+def get_models():
+    return jsonify({"models": list(MODELS.keys())})
 
-    formatted_messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+@app.route("/chat", methods=["POST"])
+def chat():
+    try:
+        data = request.get_json()
+        chat_request = ChatRequest(**data)
+    except ValidationError as e:
+        logger.error(f"Validation error: {e}")
+        return jsonify({"detail": e.errors()}), 400
+
+    if chat_request.model not in MODELS:
+        return jsonify({
+            "detail": f"Invalid model. Available models: {', '.join(MODELS.keys())}"
+        }), 400
+
+    formatted_messages = [{"role": msg.role, "content": msg.content} for msg in chat_request.messages]
 
     payload = {
-        "model": MODELS[request.model],
+        "model": MODELS[chat_request.model],
         "messages": formatted_messages,
-        "temperature": request.temperature,
-        "max_tokens": request.max_tokens,
-        "stream": request.stream
+        "temperature": chat_request.temperature,
+        "max_tokens": chat_request.max_tokens,
+        "stream": chat_request.stream
     }
 
-    try:
-        start = asyncio.get_event_loop().time()
-        data = await call_groq_api(payload)
-        end = asyncio.get_event_loop().time()
+    async def process_chat():
+        try:
+            start = asyncio.get_event_loop().time()
+            data = await call_groq_api(payload)
+            end = asyncio.get_event_loop().time()
 
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        if not content:
-            raise HTTPException(status_code=500, detail="No valid response from Groq API")
+            assistant_message = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if not assistant_message:
+                raise Exception("Empty response from Groq")
 
-        logger.info(f"Groq response time: {(end - start) * 1000:.2f}ms")
-        return ChatResponse(response=clean_response(content), model=request.model)
+            response_time = (end - start) * 1000
+            logger.info(f"Groq response time: {response_time:.2f}ms")
 
-    except Exception as e:
-        logger.exception("Error while handling chat request")
-        raise HTTPException(status_code=500, detail=str(e))
+            cleaned = clean_response(assistant_message)
+            response_obj = ChatResponse(response=cleaned, model=chat_request.model)
+            return jsonify(response_obj.dict())
+        except Exception as e:
+            logger.exception("Error in Groq processing")
+            return jsonify({"detail": str(e)}), 500
 
-@app.get("/models")
-async def get_models():
-    return {"models": list(MODELS.keys())}
-
-@app.get("/")
-async def health_check():
-    return {"status": "ok"}
+    return asyncio.run(process_chat())
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    app.run(host="0.0.0.0", port=8000, debug=True)
