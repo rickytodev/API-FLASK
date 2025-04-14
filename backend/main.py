@@ -11,12 +11,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from utils import clean_response
+from flask_cors import CORS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+CORS()
 
 # Initialize FastAPI app
 app = FastAPI(title="Groq Chatbot API")
