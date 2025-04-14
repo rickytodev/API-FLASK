@@ -12,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from utils import clean_response
 
-from flask import Flask
 from flask_cors import CORS
 
 logging.basicConfig(level=logging.INFO)
