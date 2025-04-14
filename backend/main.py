@@ -6,47 +6,51 @@ from typing import List, Dict
 from dotenv import load_dotenv
 
 from pydantic import BaseModel
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from utils import clean_response
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 # Load environment variables
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("groq-api")
 
 # Initialize FastAPI app
 app = FastAPI(title="Groq Chatbot API")
 
-# Add CORS middleware
+# Get environment variables
+GROQ_API_KEY = "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"
+GROQ_ORG = "org_01jqcz3ymzf9qv6m0cf2fbga88"
+
+if not GROQ_API_KEY or not GROQ_ORG:
+    raise ValueError("GROQ_API_KEY or GROQ_ORG is not set in the environment")
+
+# Groq API endpoint
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# CORS Configuration
+origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")  # Ej: http://localhost:3000,https://mydomain.com
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=origins if origins != ["*"] else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Get Groq API key
-GROQ_API_KEY = "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"
-if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY environment variable not set")
-
-# Groq API endpoint
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-
 # Available models
 MODELS = {
-    "deepseek-r1-distill-llama-70b":"deepseek-r1-distill-llama-70b",
-    "llama-3.3-70b-versatile":"llama-3.3-70b-versatile", 
-    "qwen-qwq-32b":"qwen-qwq-32b",
-    "qwen-2.5-coder-32b":"qwen-2.5-coder-32b"
+    "deepseek-r1-distill-llama-70b": "deepseek-r1-distill-llama-70b",
+    "llama-3.3-70b-versatile": "llama-3.3-70b-versatile",
+    "qwen-qwq-32b": "qwen-qwq-32b",
+    "qwen-2.5-coder-32b": "qwen-2.5-coder-32b"
 }
 
-# Define request/response models
+# Pydantic models
 class Message(BaseModel):
     role: str
     content: str
@@ -62,13 +66,13 @@ class ChatResponse(BaseModel):
     response: str
     model: str
 
-# Helper function to make API calls to Groq
+# Groq API Call
 async def call_groq_api(payload: Dict) -> Dict:
     async with httpx.AsyncClient() as client:
         headers = {
             "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json",
-            "Groq-Organization": "org_01jqcz3ymzf9qv6m0cf2fbga88"
+            "Groq-Organization": GROQ_ORG
         }
 
         try:
@@ -76,33 +80,32 @@ async def call_groq_api(payload: Dict) -> Dict:
                 GROQ_API_URL,
                 headers=headers,
                 json=payload,
-                timeout=30.0  # Extended timeout
+                timeout=30.0
             )
 
-            # Log the full response
-            logger.error(f"Groq API Response: {response.status_code} - {response.text}")
-
+            logger.info(f"Groq API responded with: {response.status_code}")
             if response.status_code != 200:
-                error_message = f"Groq API Error: {response.status_code} - {response.text}"
-                raise HTTPException(status_code=response.status_code, detail=error_message)
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Groq API Error: {response.text}"
+                )
 
             return response.json()
         except httpx.RequestError as e:
-            raise HTTPException(status_code=500, detail=f"Error communicating with Groq API: {str(e)}")
-
+            raise HTTPException(status_code=500, detail=f"Groq API connection error: {str(e)}")
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    logger.info(f"request model {request.model}")
-    # Validate model selection
-    if request.model not in MODELS:
-        raise HTTPException(status_code=400, detail=f"Model must be one of: {', '.join(MODELS.keys())}")
-    
-    # Format messages for the Groq API
-    formatted_messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-    logger.info(f"Received request: {request.dict()}")
+    logger.info(f"Model requested: {request.model}")
 
-    # Prepare the payload for Groq
+    if request.model not in MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model. Available models: {', '.join(MODELS.keys())}"
+        )
+
+    formatted_messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+
     payload = {
         "model": MODELS[request.model],
         "messages": formatted_messages,
@@ -111,42 +114,28 @@ async def chat(request: ChatRequest):
         "stream": request.stream
     }
 
-    # Call the Groq API
     try:
-        start_time = asyncio.get_event_loop().time()
-        response_data = await call_groq_api(payload)
-        end_time = asyncio.get_event_loop().time()
+        start = asyncio.get_event_loop().time()
+        data = await call_groq_api(payload)
+        end = asyncio.get_event_loop().time()
 
-        # Extract response text
-        assistant_message = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if not content:
+            raise HTTPException(status_code=500, detail="No valid response from Groq API")
 
-        if not assistant_message:
-            logger.error(f"Groq API response did not contain valid 'choices': {response_data}")
-            raise HTTPException(status_code=500, detail="Invalid response from Groq API")
-
-        # Log response time
-        response_time = (end_time - start_time) * 1000  # in milliseconds
-        logger.info(f"Groq response time: {response_time:.2f}ms")
-
-        assistant_message = clean_response(assistant_message)
-        return ChatResponse(
-            response=assistant_message,
-            model=request.model
-        )
+        logger.info(f"Groq response time: {(end - start) * 1000:.2f}ms")
+        return ChatResponse(response=clean_response(content), model=request.model)
 
     except Exception as e:
-        logger.error(f"Error processing chat request: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error processing chat request: {str(e)}")
-
+        logger.exception("Error while handling chat request")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/models")
 async def get_models():
-    """Return the list of available models"""
     return {"models": list(MODELS.keys())}
 
 @app.get("/")
 async def health_check():
-    """Health check endpoint"""
     return {"status": "ok"}
 
 if __name__ == "__main__":
