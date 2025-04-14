@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# Cargar cors
+# Cargar cors nuevos
 CORS()
 
 # Initialize FastAPI app
