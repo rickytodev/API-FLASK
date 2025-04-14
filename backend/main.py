@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 # Get Groq API key
-GROQ_API_KEY = "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"
+GROQ_API_KEY = "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"
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY environment variable not set")
 
@@ -151,4 +151,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
