@@ -3,6 +3,7 @@ import logging
 from typing import List, Dict
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+from flask_cors import CORS
 import httpx
 import asyncio
 
@@ -16,6 +17,8 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+CORS(app, supports_credentials=True)
 
 # Get Groq API key
 GROQ_API_KEY = "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"
