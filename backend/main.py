@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import List, Dict
 from dotenv import load_dotenv
-
+from flask_cors import CORS
 from pydantic import BaseModel
 
 from fastapi import FastAPI, HTTPException
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+CORS()
 
 # Initialize FastAPI app
 app = FastAPI(title="Groq Chatbot API")
