@@ -7,6 +7,7 @@ colorama==0.4.6
 dotenv==0.9.9
 Flask==3.1.0
 flask-cors==5.0.1
+gunicorn==23.0.0
 h11==0.14.0
 httpcore==1.0.8
 httpx==0.28.1
@@ -14,6 +15,7 @@ idna==3.10
 itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.2
+packaging==24.2
 pydantic==2.11.3
 pydantic_core==2.33.1
 python-dotenv==1.1.0
